@@ -2,6 +2,7 @@
 import { MongoClient } from "mongodb";
 
 let db;
+let client;
 
 const connectDB = async () => {
     try {
@@ -12,11 +13,24 @@ const connectDB = async () => {
             throw new Error("MongoDB environment variables are missing");
         }
 
-        const client = new MongoClient(uri);
+        client = new MongoClient(uri);
 
         await client.connect();
 
         db = client.db(dbName);
+
+        // Create unique compound index for participants
+        await db.collection("participants").createIndex(
+            {
+                eventId: 1,
+                userId: 1,
+            },
+            {
+                unique: true,
+            }
+        );
+
+        console.log("Participant Unique Index Created!");
 
         console.log("MongoDB Connected Successfully!");
 
@@ -35,4 +49,12 @@ const getDB = () => {
     return db;
 };
 
-export { connectDB, getDB };
+const getMongoClient = () => {
+    if (!client) {
+        throw new Error("MongoDB client is not connected yet");
+    }
+
+    return client;
+};
+
+export { connectDB, getDB, getMongoClient };
