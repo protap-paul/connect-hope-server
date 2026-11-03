@@ -1,3 +1,4 @@
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -23,12 +24,26 @@ app.use(
 
 app.use(express.json({ limit: "10kb" }));
 
+// Ensure MongoDB connection before handling requests
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (error) {
+        console.error("Database Connection Error:", error.message);
+
+        return res.status(500).json({
+            success: false,
+            message: "Database connection failed.",
+        });
+    }
+});
+
 // Routes
 app.use("/api/events", eventRoutes);
 app.use("/api/users", userRoutes);
 
-// Test Route
-
+// Protected Test Route
 app.get("/api/protected", verifyToken, (req, res) => {
     res.status(200).json({
         success: true,
@@ -37,18 +52,20 @@ app.get("/api/protected", verifyToken, (req, res) => {
     });
 });
 
+// Ignore browser favicon request
+app.get("/favicon.ico", (req, res) => {
+    res.status(204).end();
+});
+
+// Home Route
 app.get("/", (req, res) => {
     res.send("Welcome to ConnectHope Server!");
 });
 
-// Handle unknown API routes
+// Handle Unknown Routes
 app.use((req, res, next) => {
-    const error = new Error(
-        `Route not found: ${req.originalUrl}`
-    );
-
+    const error = new Error(`Route not found: ${req.originalUrl}`);
     error.statusCode = 404;
-
     next(error);
 });
 
@@ -67,18 +84,28 @@ app.use((error, req, res, next) => {
     });
 });
 
-// Start Server
-const startServer = async () => {
-    try {
-        await connectDB();
+// Local Development Server
+if (!process.env.VERCEL) {
+    const startServer = async () => {
+        try {
+            await connectDB();
 
-        app.listen(PORT, () => {
-            console.log(`ConnectHope Server running on port ${PORT}`);
-        });
-    } catch (error) {
-        console.error("Server failed to start:", error.message);
-        process.exit(1);
-    }
-};
+            app.listen(PORT, () => {
+                console.log(
+                    `ConnectHope Server running on port ${PORT}`
+                );
+            });
+        } catch (error) {
+            console.error(
+                "Server failed to start:",
+                error.message
+            );
+            process.exit(1);
+        }
+    };
 
-startServer();
+    startServer();
+}
+
+// Export Express app for Vercel
+export default app;
