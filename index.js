@@ -14,10 +14,22 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
+const allowedOrigins = [
+    "http://localhost:3000",
+    process.env.CLIENT_URL,
+].filter(Boolean);
+
 app.use(
     cors({
-        origin: process.env.CLIENT_URL,
-        methods: ["GET", "POST", "PATCH", "DELETE"],
+        origin: (origin, callback) => {
+            // Allow requests without an Origin header (e.g. Postman)
+            if (!origin || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+
+            return callback(new Error("Not allowed by CORS"));
+        },
+        methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
         allowedHeaders: ["Content-Type", "Authorization"],
     })
 );
