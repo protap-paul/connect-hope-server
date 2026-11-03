@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { connectDB } from "./config/db.js";
 import eventRoutes from "./routes/event.routes.js";
+import userRoutes from "./routes/user.routes.js";
 import verifyToken from "./middleware/verifyToken.js";
 
 dotenv.config();
@@ -24,6 +25,7 @@ app.use(express.json({ limit: "10kb" }));
 
 // Routes
 app.use("/api/events", eventRoutes);
+app.use("/api/users", userRoutes);
 
 // Test Route
 

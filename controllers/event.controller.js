@@ -45,6 +45,7 @@ const getUpcomingEvents = async (req, res) => {
 };
 
 // Get Single Event Details
+
 const getEventDetails = async (req, res) => {
     try {
         const { id } = req.params;
@@ -58,30 +59,70 @@ const getEventDetails = async (req, res) => {
         }
 
         const db = getDB();
+        const eventId = new ObjectId(id);
 
+        // Find Event
         const event = await db.collection("events").findOne({
-            _id: new ObjectId(id),
+            _id: eventId,
         });
+
         if (!event) {
             return res.status(404).json({
                 success: false,
                 message: "Event not found",
             });
         }
-        res.status(200).json({
+
+        // Find Organizer from User Collection
+        let organizerUser = null;
+
+        if (ObjectId.isValid(event.creatorId)) {
+            organizerUser = await db.collection("user").findOne(
+                {
+                    _id: new ObjectId(event.creatorId),
+                },
+                {
+                    projection: {
+                        name: 1,
+                        email: 1,
+                        image: 1,
+                    },
+                }
+            );
+        }
+
+        // Organizer Information with fallback
+        const organizer = {
+            name: event.creatorName || organizerUser?.name || "Unknown Organizer",
+            email: event.creatorEmail || organizerUser?.email || "",
+            image: event.creatorImage || organizerUser?.image || "",
+        };
+
+        // Count Event Participants
+        const volunteerCount = await db.collection("participants").countDocuments({
+            eventId,
+        });
+
+        // Send Event Details
+        return res.status(200).json({
             success: true,
             message: "Event details fetched successfully.",
-            data: event,
+            data: {
+                ...event,
+                organizer,
+                volunteerCount,
+            },
         });
+
     } catch (error) {
         console.error("Get Event Details Error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to fetch event details",
         });
     }
-}
+};
 
 const createEvent = async (req, res) => {
     try {
@@ -182,7 +223,27 @@ const createEvent = async (req, res) => {
             });
         }
 
+        // Initialize database before using it
         const db = getDB();
+
+        // Find organizer information
+        const user = await db.collection("user").findOne(
+            { _id: new ObjectId(id) },
+            {
+                projection: {
+                    name: 1,
+                    image: 1,
+                },
+            }
+        );
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "Organizer profile not found.",
+            });
+        }
+
 
         const newEvent = {
             title: title.trim(),
@@ -192,9 +253,11 @@ const createEvent = async (req, res) => {
             location: location.trim(),
             eventDate: parsedDate,
 
-            // Never trust creator identity from req.body
+            // Organizer Information
             creatorId: id,
+            creatorName: user.name,
             creatorEmail: email,
+            creatorImage: user.image || "",
 
             createdAt: new Date(),
         };
@@ -574,6 +637,70 @@ const joinEvent = async (req, res) => {
     }
 };
 
+// Leave Event
+const leaveEvent = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { id: userId } = req.user;
+
+        // Validate Event ID
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid event ID.",
+            });
+        }
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "User authentication required.",
+            });
+        }
+
+        const db = getDB();
+        const eventId = new ObjectId(id);
+
+        // Check whether the event exists
+        const event = await db.collection("events").findOne({
+            _id: eventId,
+        });
+
+        if (!event) {
+            return res.status(404).json({
+                success: false,
+                message: "Event not found.",
+            });
+        }
+
+        // Remove only the current user's participation
+        const result = await db.collection("participants").deleteOne({
+            eventId,
+            userId,
+        });
+
+        if (result.deletedCount === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "You have not joined this event.",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "You have successfully left the event.",
+        });
+
+    } catch (error) {
+        console.error("Leave Event Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to leave event.",
+        });
+    }
+};
+
 const getMyJoinedEvents = async (req, res) => {
     try {
         const { id: userId } = req.user;
@@ -593,7 +720,6 @@ const getMyJoinedEvents = async (req, res) => {
             .find({ userId })
             .toArray();
 
-        // Return empty array if user has not joined any event
         if (participants.length === 0) {
             return res.status(200).json({
                 success: true,
@@ -601,6 +727,14 @@ const getMyJoinedEvents = async (req, res) => {
                 data: [],
             });
         }
+
+        // Create a map of event IDs and joined dates
+        const participantMap = new Map(
+            participants.map((participant) => [
+                participant.eventId.toString(),
+                participant.joinedAt,
+            ])
+        );
 
         // Extract event IDs
         const eventIds = participants.map(
@@ -616,21 +750,66 @@ const getMyJoinedEvents = async (req, res) => {
             .sort({ eventDate: 1 })
             .toArray();
 
-        res.status(200).json({
+        // Attach joinedAt to each event
+        const joinedEvents = events.map((event) => ({
+            ...event,
+            joinedAt: participantMap.get(event._id.toString()),
+        }));
+
+        return res.status(200).json({
             success: true,
             message: "Your joined events fetched successfully.",
-            data: events,
+            data: joinedEvents,
         });
 
     } catch (error) {
         console.error("Get My Joined Events Error:", error);
 
-        res.status(500).json({
+        return res.status(500).json({
             success: false,
             message: "Failed to fetch your joined events.",
         });
     }
 };
 
+const getPastEvents = async (req, res) => {
+    try {
+        const db = getDB();
 
-export { getUpcomingEvents, getEventDetails, createEvent, getMyEvents, updateEvent, deleteEvent, joinEvent, getMyJoinedEvents };
+        const events = await db
+            .collection("events")
+            .find({
+                eventDate: { $lte: new Date() },
+            })
+            .sort({ eventDate: -1 })
+            .limit(6)
+            .toArray();
+
+        return res.status(200).json({
+            success: true,
+            message: "Past events fetched successfully.",
+            data: events,
+        });
+    } catch (error) {
+        console.error("Get Past Events Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch past events.",
+        });
+    }
+};
+
+
+export {
+    getUpcomingEvents,
+    getPastEvents,
+    getEventDetails,
+    createEvent,
+    getMyEvents,
+    updateEvent,
+    deleteEvent,
+    joinEvent,
+    leaveEvent,
+    getMyJoinedEvents
+};

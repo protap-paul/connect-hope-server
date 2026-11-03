@@ -3,6 +3,7 @@ import express from "express";
 
 import {
     getUpcomingEvents,
+    getPastEvents,
     getEventDetails,
     createEvent,
     getMyEvents,
@@ -10,6 +11,7 @@ import {
     deleteEvent,
     joinEvent,
     getMyJoinedEvents,
+    leaveEvent,
 } from "../controllers/event.controller.js";
 
 import verifyToken from "../middleware/verifyToken.js";
@@ -19,6 +21,7 @@ const router = express.Router();
 
 // Public GET Route
 router.get("/upcoming", getUpcomingEvents);
+router.get("/past", getPastEvents);
 
 // Private GET Routes
 router.get("/my-events", verifyToken, getMyEvents);
@@ -34,6 +37,7 @@ router.post("/:id/join", verifyToken, joinEvent);
 
 // Private PATCH and DELETE Routes
 router.patch("/:id", verifyToken, updateEvent);
+router.delete("/:id/leave", verifyToken, leaveEvent);
 router.delete("/:id", verifyToken, deleteEvent);
 
 export default router;
